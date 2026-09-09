@@ -1,0 +1,9 @@
+ALTER TABLE profiles
+ADD COLUMN IF NOT EXISTS trust_score INTEGER DEFAULT 35;
+
+ALTER TABLE profiles
+ADD COLUMN IF NOT EXISTS last_reward_sync_at TIMESTAMP WITH TIME ZONE;
+
+UPDATE profiles
+SET trust_score = 35
+WHERE trust_score IS NULL;
