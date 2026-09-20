@@ -13,7 +13,7 @@ export function MarketplaceSatelliteMap({ sellers }: Props) {
   return (
     <View style={styles.container}>
       <View style={{ width: 18, height: 18, borderRadius: 4, backgroundColor: Colors.primary }} />
-      <Typography variant="body" style={styles.title}>Vue satellite mobile disponible</Typography>
+      <Typography variant="body" style={styles.title}>Carte OpenStreetMap disponible sur mobile</Typography>
       <Typography variant="caption" color={Colors.textSecondary} style={styles.text}>
         La carte satellite utilise Google Maps sur Android et iOS. {sellers.length} boutique(s) sont géolocalisée(s).
       </Typography>

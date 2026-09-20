@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Modal, RefreshControl, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Image, Modal, RefreshControl, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { Filter, Info, MapPin, Search, Sparkles, TrendingDown, TrendingUp, X, Zap } from 'lucide-react-native';
+import { Compass, Filter, Info, MapPin, Search, Sparkles, TrendingDown, TrendingUp, X, Zap } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 import { Button } from '@/components/Button';
@@ -313,8 +313,12 @@ export default function FeedScreen() {
     return searchableCatalog.filter((item: any) => {
       const haystack = [
         item.name,
+        item.label,
         item.category,
         item.unit,
+        item.seller_full_name,
+        item.seller_name,
+        item.shop_name,
         item.price_value != null ? String(item.price_value) : '',
       ]
         .map((value) => normalizeProductName(String(value || '')))
@@ -326,26 +330,56 @@ export default function FeedScreen() {
     });
   }, [searchQuery, searchableCatalog, selectedCategory]);
 
-  const sellerResults = useMemo(() => {
-    return catalogResults.filter((item: any) => getBoutiqueOffer(item) !== null);
-  }, [catalogResults]);
+  const handlePurchase = (item: any, offer: ReturnType<typeof getBoutiqueOffer>) => {
+    if (!offer) return;
+
+    router.push({
+      pathname: '/chat',
+      params: {
+        productId: offer.productId,
+        productName: item.name,
+        productCategory: item.category || '',
+        productUnit: item.unit || '',
+        sellerId: offer.sellerId,
+        sellerName: offer.sellerName,
+        source: item.source,
+        intent: 'purchase',
+      },
+    });
+  };
 
   const tickerItems = useMemo(() => {
-    return dashboardItems.map((item) => {
-      const change: 'up' | 'down' | 'stable' =
-        item.changePercent === null
-          ? 'stable'
-          : item.changePercent > 0.5
-          ? 'up'
-          : item.changePercent < -0.5
-          ? 'down'
-          : 'stable';
+    // Produits de grande consommation et les plus recherchés sur les marchés
+    const popularKeywords = ['riz', 'maïs', 'mais', 'sorgho', 'tomate', 'oignon', 'viande', 'huile', 'sucre', 'poulet', 'haricot', 'mil', 'millet'];
 
-      return {
-        ...item,
-        change,
-      };
-    }).slice(0, 12);
+    return dashboardItems
+      .map((item) => {
+        const changePercent = typeof item.changePercent === 'number' ? item.changePercent : 0;
+        const absVariation = Math.abs(changePercent);
+        
+        const change: 'up' | 'down' | 'stable' =
+          item.changePercent === null
+            ? 'stable'
+            : item.changePercent > 0.4
+            ? 'up'
+            : item.changePercent < -0.4
+            ? 'down'
+            : 'stable';
+
+        const nameLower = (item.name || '').toLowerCase();
+        const isPopular = popularKeywords.some((keyword) => nameLower.includes(keyword));
+        
+        // Score de priorité combinant popularité recherchée et intensité de variation
+        const priorityScore = (isPopular ? 40 : 0) + (absVariation * 4) + (item.price ? 5 : 0);
+
+        return {
+          ...item,
+          change,
+          priorityScore,
+        };
+      })
+      .sort((a, b) => b.priorityScore - a.priorityScore)
+      .slice(0, 16);
   }, [dashboardItems]);
 
   const insightModel = useMemo(() => {
@@ -489,29 +523,135 @@ export default function FeedScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
       >
-        <View style={styles.header}>
-          <Typography variant="label" color={Colors.textSecondary} style={styles.dateLabel}>
-            {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
-          </Typography>
-          <View style={styles.headerTitleRow}>
-            <Typography variant="h1">Yawana</Typography>
-            <TouchableOpacity style={styles.profileBtn} onPress={() => setShowInsight(true)}>
-              <Sparkles size={24} color={Colors.primary} />
+        {/* HERO BANNER TINGUISTE (#0A57A4) */}
+        <View style={styles.heroBanner}>
+          <View style={styles.heroTopRow}>
+            <View>
+              <Typography variant="label" style={styles.heroDateLabel}>
+                {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+              </Typography>
+              <Typography variant="h1" style={styles.heroGreeting}>
+                Bonjour 👋
+              </Typography>
+            </View>
+            <TouchableOpacity style={styles.heroProfileBtn} onPress={() => setShowInsight(true)}>
+              <Sparkles size={20} color={Colors.white} />
             </TouchableOpacity>
+          </View>
+
+          {/* BARRE DE RECHERCHE EN PILULE STYLE TINGUISTE */}
+          <View style={styles.heroSearchPill}>
+            <MapPin size={20} color={Colors.accent} style={{ marginRight: 8 }} />
+            <View style={{ flex: 1 }}>
+              <Typography variant="caption" color={Colors.textSecondary} style={styles.heroSearchSub}>
+                RECHERCHE
+              </Typography>
+              <TextInput
+                placeholder="Rechercher un produit ou un vendeur..."
+                placeholderTextColor={Colors.textSecondary}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                style={styles.heroSearchInput}
+              />
+            </View>
+            {searchQuery ? (
+              <TouchableOpacity onPress={() => setSearchQuery('')} style={{ marginRight: 6 }}>
+                <X size={16} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            ) : null}
+            <View style={styles.heroSearchButton}>
+              <Search size={16} color={Colors.white} />
+            </View>
           </View>
         </View>
 
-        <Card style={styles.contextCard} variant="outline">
+        {/* 4 CARTES DE CATÉGORIES RAPIDES SUR PASTELS (STYLE TINGUISTE) */}
+        <View style={styles.quickCategoriesRow}>
+          <TouchableOpacity 
+            style={[styles.quickCategoryCard, selectedCategory === 'Cereales' && styles.quickCategoryActive]} 
+            onPress={() => setSelectedCategory(selectedCategory === 'Cereales' ? null : 'Cereales')}
+          >
+            <View style={[styles.quickCategoryIconWrap, { backgroundColor: Colors.pastelYellow }]}>
+              <Typography variant="body">🌾</Typography>
+            </View>
+            <Typography variant="caption" style={styles.quickCategoryTitle}>Céréales</Typography>
+            <Typography variant="caption" color={Colors.textSecondary} style={styles.quickCategorySub}>Maïs, Riz</Typography>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.quickCategoryCard, selectedCategory === 'Viandes' && styles.quickCategoryActive]} 
+            onPress={() => setSelectedCategory(selectedCategory === 'Viandes' ? null : 'Viandes')}
+          >
+            <View style={[styles.quickCategoryIconWrap, { backgroundColor: Colors.pastelOrange }]}>
+              <Typography variant="body">🥩</Typography>
+            </View>
+            <Typography variant="caption" style={styles.quickCategoryTitle}>Bétail</Typography>
+            <Typography variant="caption" color={Colors.textSecondary} style={styles.quickCategorySub}>Mouton, Bœuf</Typography>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.quickCategoryCard, selectedCategory === 'Legumes' && styles.quickCategoryActive]} 
+            onPress={() => setSelectedCategory(selectedCategory === 'Legumes' ? null : 'Legumes')}
+          >
+            <View style={[styles.quickCategoryIconWrap, { backgroundColor: Colors.pastelGreen }]}>
+              <Typography variant="body">🥬</Typography>
+            </View>
+            <Typography variant="caption" style={styles.quickCategoryTitle}>Légumes</Typography>
+            <Typography variant="caption" color={Colors.textSecondary} style={styles.quickCategorySub}>Tomate, Oignon</Typography>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.quickCategoryCard} 
+            onPress={() => router.push('/(tabs)/map')}
+          >
+            <View style={[styles.quickCategoryIconWrap, { backgroundColor: Colors.pastelBlue }]}>
+              <Typography variant="body">🏪</Typography>
+            </View>
+            <Typography variant="caption" style={styles.quickCategoryTitle}>Boutiques</Typography>
+            <Typography variant="caption" color={Colors.textSecondary} style={styles.quickCategorySub}>Points relais</Typography>
+          </TouchableOpacity>
+        </View>
+
+        {/* WIDGET PROXIMITÉ RADAR ("DÉCOUVRE LES PRIX AUTOUR DE TOI") */}
+        <Card style={styles.proximityRadarCard} variant="default">
+          <View style={styles.proximityRow}>
+            <View style={{ flex: 1, paddingRight: 10 }}>
+              <Typography variant="h2" style={styles.proximityTitle}>
+                Découvre les prix autour de toi
+              </Typography>
+              <Typography variant="caption" color={Colors.textSecondary} style={styles.proximityDesc}>
+                {currentMarket?.name 
+                  ? `Suivi en temps réel des cours sur le marché de ${currentMarket.name}.` 
+                  : "Accédez aux meilleures opportunités et variations récentes près de chez vous."}
+              </Typography>
+              <TouchableOpacity 
+                style={styles.proximityBtn}
+                onPress={() => router.push('/(tabs)/map')}
+              >
+                <Compass size={16} color={Colors.white} style={{ marginRight: 6 }} />
+                <Typography variant="caption" color={Colors.white} style={{ fontWeight: '800' }}>
+                  Voir autour de moi
+                </Typography>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.proximityIconCircle}>
+              <Compass size={32} color={Colors.primaryLight} />
+            </View>
+          </View>
+        </Card>
+
+        {/* CONTEXTE LOCAL & CONFIANCE */}
+        <Card style={styles.contextCard} variant="default">
           <View style={styles.contextTopRow}>
             <View style={{ flex: 1 }}>
               <Typography variant="label" color={Colors.primary}>
-                Ton contexte
+                Ton profil marché
               </Typography>
               <Typography variant="body" style={{ fontWeight: '800', marginTop: 4 }}>
                 {currentCity?.name || 'Ville non définie'}
               </Typography>
               <Typography variant="caption" color={Colors.textSecondary} style={{ marginTop: 2 }}>
-                {currentMarket?.name ? `Marché de référence : ${currentMarket.name}` : 'Marché de référence à confirmer'}
+                {currentMarket?.name ? `Marché : ${currentMarket.name}` : 'Marché de référence à confirmer'}
               </Typography>
             </View>
             <View style={styles.contextScorePill}>
@@ -524,129 +664,99 @@ export default function FeedScreen() {
           <View style={styles.contextActions}>
             <TouchableOpacity style={styles.contextAction} onPress={() => router.push('/(tabs)/add-price')}>
               <Typography variant="caption" style={styles.contextActionText}>
-                Ajouter un prix
-              </Typography>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.contextAction} onPress={() => router.push('/(tabs)/map')}>
-              <Typography variant="caption" style={styles.contextActionText}>
-                Ouvrir la carte
+                + Ajouter un prix
               </Typography>
             </TouchableOpacity>
             <TouchableOpacity style={styles.contextAction} onPress={() => router.push('/(tabs)/profile')}>
               <Typography variant="caption" style={styles.contextActionText}>
-                Voir le profil
+                Voir ma boutique
               </Typography>
             </TouchableOpacity>
           </View>
         </Card>
 
-        <View style={styles.searchBarContainer}>
-          <View style={styles.searchBar}>
-            <Search color={Colors.textSecondary} size={18} />
-            <TextInput
-              placeholder="Rechercher"
-              style={styles.searchInput}
-              placeholderTextColor={Colors.textSecondary}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-          </View>
-        </View>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
-          <TouchableOpacity style={[styles.chip, !selectedCategory && styles.chipActive]} onPress={() => setSelectedCategory(null)}>
-            <Typography variant="caption" color={!selectedCategory ? Colors.white : Colors.textSecondary}>Tout</Typography>
-          </TouchableOpacity>
-          {Object.keys(CATEGORY_ICONS).map((cat) => (
-            <TouchableOpacity
-              key={cat}
-              style={[styles.chip, selectedCategory === cat && styles.chipActive]}
-              onPress={() => setSelectedCategory(cat)}
-            >
-              <Typography variant="caption" style={{ marginRight: 4 }}>{CATEGORY_ICONS[cat]}</Typography>
-              <Typography variant="caption" color={selectedCategory === cat ? Colors.white : Colors.textSecondary}>{cat}</Typography>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {searchQuery ? (
+        {(
           <View style={styles.catalogSection}>
             <View style={styles.sectionHeader}>
-              <Typography variant="h2">Vendeurs trouvés</Typography>
+              <Typography variant="h2">Résultats de recherche</Typography>
               <Typography variant="caption" color={Colors.textSecondary}>
-                {sellerResults.length} vendeur{sellerResults.length > 1 ? 's' : ''}
+                {catalogResults.length} résultat{catalogResults.length > 1 ? 's' : ''}
               </Typography>
             </View>
 
-                {sellerResults.length ? (
+                {catalogResults.length ? (
               <View style={styles.catalogGrid}>
-                {sellerResults.slice(0, 8).map((item: any) => (
+                {catalogResults.slice(0, 8).map((item: any) => {
+                  const offer = getBoutiqueOffer(item);
+
+                  return (
                   <TouchableOpacity
                     key={item.id}
-                    style={styles.catalogCard}
+                    style={[styles.catalogCard, !offer && styles.catalogObservedCard]}
                     activeOpacity={0.85}
-                    onPress={() => {
-                      const sellerName = item.seller_full_name || 'Vendeur confirmé';
-
-                      router.push({
-                        pathname: '/chat',
-                        params: {
-                          productId: item.resolved_product_id || item.resolvedProductId || item.id,
-                          productName: item.name,
-                          productCategory: item.category || '',
-                          productUnit: item.unit || '',
-                          sellerId: item.owner_id || '',
-                          sellerName: sellerName,
-                          source: item.source,
-                        },
-                      });
-                    }}
+                    onPress={offer ? () => handlePurchase(item, offer) : undefined}
+                    disabled={!offer}
                   >
+                    {item.image_url ? (
+                      <Image source={{ uri: item.image_url }} style={styles.catalogImage} />
+                    ) : (
+                      <View style={[styles.catalogImage, styles.catalogImagePlaceholder]}>
+                        <Typography variant="caption" color={Colors.textSecondary}>Produit</Typography>
+                      </View>
+                    )}
                     <View style={styles.catalogCardTopRow}>
                       <Typography variant="caption" color={Colors.primary} style={{ fontWeight: '800' }} numberOfLines={1}>
-                        Vendeur confirmé
+                        {offer ? 'Vendeur éligible' : 'Produit suivi'}
                       </Typography>
                       <View style={styles.catalogPricePill}>
                         <Typography variant="caption" color={Colors.white} style={{ fontWeight: '800' }}>
-                          Chat
+                          {offer ? 'Acheter' : 'Prix'}
                         </Typography>
                       </View>
                     </View>
                     {(() => {
-                      const offer = getBoutiqueOffer(item);
-                      const sellerName = offer?.sellerName || item.seller_full_name || 'ce vendeur';
-                      const label =
-                        offer?.palette === 'palette2'
-                          ? `Acheter chez ${sellerName}`
-                          : `Disponible chez ${sellerName}`;
-
                       return (
                         <Typography variant="caption" color={Colors.primary} style={{ fontWeight: '800', marginTop: 8 }} numberOfLines={1}>
-                          {label}
+                          {offer ? `Chez ${offer.sellerName}` : 'Produit disponible dans le catalogue'}
                         </Typography>
                       );
                     })()}
                     <Typography variant="h2" style={styles.catalogTitle} numberOfLines={2}>
-                      {item.seller_full_name || 'Vendeur confirmé'}
+                      {item.name || 'Produit'}
                     </Typography>
                     <Typography variant="caption" color={Colors.textSecondary} numberOfLines={1}>
-                      {item.name} · {item.category} · {item.unit}
+                      {item.category} · {item.unit}
                     </Typography>
                     <Typography variant="caption" color={Colors.textSecondary} style={styles.catalogHint} numberOfLines={1}>
-                      Ouvrir le lien vendeur
+                      {offer ? 'Achat direct auprès du vendeur' : 'Produit suivi par Yawana'}
                     </Typography>
+                    {offer ? (
+                      <TouchableOpacity
+                        style={styles.catalogBuyButton}
+                        activeOpacity={0.82}
+                        onPress={() => handlePurchase(item, offer)}
+                      >
+                        <Typography variant="caption" color={Colors.white} style={styles.catalogBuyButtonText}>
+                          Acheter chez {offer.sellerName}
+                        </Typography>
+                        <Typography variant="caption" color={Colors.white} style={styles.catalogBuyButtonArrow}>
+                          →
+                        </Typography>
+                      </TouchableOpacity>
+                    ) : null}
                   </TouchableOpacity>
-                ))}
+                  );
+                })}
               </View>
             ) : (
               <Card variant="outline" style={styles.catalogEmptyCard}>
                 <Typography variant="body" color={Colors.textSecondary}>
-                  Aucun vendeur confirmé n’a déclaré ce produit.
+                  Aucun produit ou vendeur ne correspond à cette recherche.
                 </Typography>
               </Card>
             )}
           </View>
-        ) : null}
+        )}
 
         <View style={styles.watchlist}>
           {isLoading ? (
@@ -966,6 +1076,170 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   content: { paddingBottom: Layout.tabScreenBottomPadding },
+  
+  // NOUVEAUX STYLES TINGUISTE
+  heroBanner: {
+    backgroundColor: Colors.primary,
+    paddingTop: 54,
+    paddingBottom: 22,
+    paddingHorizontal: Spacing.md,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    marginBottom: 16,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  heroDateLabel: {
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  heroGreeting: {
+    color: Colors.white,
+    fontSize: 30,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    marginTop: 2,
+  },
+  heroProfileBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  heroSearchPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    borderRadius: Radius.pill,
+    paddingLeft: 14,
+    paddingRight: 6,
+    paddingVertical: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  heroSearchSub: {
+    fontSize: 9,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    color: Colors.textSecondary,
+  },
+  heroSearchInput: {
+    fontSize: 14,
+    color: Colors.text,
+    paddingVertical: 2,
+  },
+  heroSearchButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quickCategoriesRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    marginBottom: 16,
+    gap: 8,
+  },
+  quickCategoryCard: {
+    flex: 1,
+    backgroundColor: Colors.card,
+    borderRadius: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  quickCategoryActive: {
+    borderColor: Colors.primaryLight,
+    backgroundColor: Colors.pastelBlue,
+  },
+  quickCategoryIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  quickCategoryTitle: {
+    fontWeight: '800',
+    fontSize: 11,
+    color: Colors.text,
+    textAlign: 'center',
+  },
+  quickCategorySub: {
+    fontSize: 9,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 1,
+  },
+  proximityRadarCard: {
+    marginHorizontal: Spacing.md,
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 22,
+    backgroundColor: Colors.cardSecondary,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  proximityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  proximityTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  proximityDesc: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: Colors.textSecondary,
+    marginTop: 4,
+  },
+  proximityBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primaryLight,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: Radius.pill,
+    alignSelf: 'flex-start',
+    marginTop: 10,
+  },
+  proximityIconCircle: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: Colors.card,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(0, 145, 245, 0.25)',
+  },
+
   header: { paddingHorizontal: Spacing.md, paddingTop: 60, marginBottom: Spacing.md },
   dateLabel: { textTransform: 'uppercase', marginBottom: 4, fontWeight: '600' },
   headerTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -976,6 +1250,8 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 20,
     backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.border,
     ...Shadows.soft,
   },
   contextTopRow: {
@@ -1035,6 +1311,22 @@ const styles = StyleSheet.create({
     padding: 14,
     minHeight: 130,
   },
+  catalogObservedCard: {
+    opacity: 0.94,
+  },
+  catalogImage: {
+    width: '100%',
+    height: 112,
+    borderRadius: Radius.md,
+    marginBottom: 12,
+    backgroundColor: Colors.background,
+  },
+  catalogImagePlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
   catalogCardTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1043,10 +1335,29 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   catalogPricePill: {
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.accent,
     borderRadius: Radius.pill,
     paddingHorizontal: 8,
     paddingVertical: 4,
+  },
+  catalogBuyButton: {
+    marginTop: 14,
+    minHeight: 40,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.accent,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  catalogBuyButtonText: {
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  catalogBuyButtonArrow: {
+    fontSize: 18,
+    lineHeight: 18,
+    fontWeight: '800',
   },
   catalogTitle: {
     fontSize: 15,
@@ -1099,11 +1410,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderRadius: 24,
     overflow: 'hidden',
-  },
-  heroTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
   },
   heroIconWrap: {
     width: 48,

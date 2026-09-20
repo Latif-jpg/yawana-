@@ -22,7 +22,7 @@ const renderTabButton = (props: any) => (
 export default function TabLayout() {
   return (
     <Tabs screenOptions={{
-      tabBarActiveTintColor: Colors.primary,
+      tabBarActiveTintColor: Colors.primaryLight,
       tabBarInactiveTintColor: Colors.textSecondary,
       tabBarStyle: {
         position: 'absolute',
@@ -30,36 +30,36 @@ export default function TabLayout() {
         right: 16,
         bottom: Layout.tabBarBottom,
         height: Layout.tabBarHeight,
-        paddingTop: 10,
-        paddingBottom: 10,
-        backgroundColor: Colors.glass,
+        paddingTop: 8,
+        paddingBottom: 8,
+        backgroundColor: Colors.card,
         borderTopColor: Colors.border,
         borderWidth: 1,
         borderColor: Colors.border,
         borderRadius: 26,
-        shadowColor: '#000',
-        shadowOpacity: 0.18,
-        shadowRadius: 24,
-        shadowOffset: { width: 0, height: 10 },
-        elevation: 10,
+        shadowColor: '#0F172A',
+        shadowOpacity: 0.08,
+        shadowRadius: 18,
+        shadowOffset: { width: 0, height: 6 },
+        elevation: 6,
       },
       tabBarItemStyle: {
         paddingTop: 0,
         paddingBottom: 0,
       },
       tabBarLabelStyle: {
-        marginTop: 0,
-        fontSize: 10,
+        marginTop: 2,
+        fontSize: 11,
         fontWeight: '700',
       },
       tabBarShowLabel: true,
-      headerShown: false, // On utilise nos propres headers pour le style Apple
+      headerShown: false,
     }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Explorer',
-          tabBarIcon: ({ color }) => <LayoutGrid color={color} size={24} />,
+          tabBarIcon: ({ color }) => <LayoutGrid color={color} size={22} />,
           tabBarButton: renderTabButton,
         }}
       />
@@ -67,7 +67,7 @@ export default function TabLayout() {
         name="add-price"
         options={{
           title: 'Ajouter',
-          tabBarIcon: ({ color }) => <PlusCircle color={color} size={24} />,
+          tabBarIcon: ({ color }) => <PlusCircle color={color} size={22} />,
           tabBarButton: renderTabButton,
         }}
       />
@@ -75,7 +75,7 @@ export default function TabLayout() {
         name="map"
         options={{
           title: 'Boutiques',
-          tabBarIcon: ({ color }) => <Store color={color} size={24} />,
+          tabBarIcon: ({ color }) => <Store color={color} size={22} />,
           tabBarButton: renderTabButton,
         }}
       />
@@ -83,7 +83,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Ma boutique',
-          tabBarIcon: ({ color }) => <User color={color} size={24} />,
+          tabBarIcon: ({ color }) => <User color={color} size={22} />,
           tabBarButton: renderTabButton,
         }}
       />
@@ -94,28 +94,28 @@ export default function TabLayout() {
 const styles = {
   tabButton: {
     flex: 1,
-    borderRadius: 20,
-    marginHorizontal: 4,
-    marginVertical: 4,
-    paddingVertical: 8,
+    borderRadius: 18,
+    marginHorizontal: 3,
+    marginVertical: 2,
+    paddingVertical: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   tabButtonActive: {
-    backgroundColor: Colors.primary,
+    backgroundColor: 'rgba(0, 145, 245, 0.10)',
   },
   tabButtonPressed: {
-    opacity: 0.9,
+    opacity: 0.85,
   },
   tabLabelWrap: {
     marginTop: 2,
   },
   tabLabel: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
     textAlign: 'center',
   },
   tabLabelActive: {
-    color: Colors.white,
+    color: Colors.primaryLight,
   },
 } as const;

@@ -33,8 +33,9 @@ async function fetchLocalPrices(productId: string, marketId: string) {
 export function useDashboardSummary() {
   return useQuery<DashboardSummaryRow[]>({
     queryKey: ['dashboard-summary'],
-    refetchInterval: 30000,
-    staleTime: 10000,
+    refetchInterval: 60000,
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       try {
         assertSupabaseConfigured();

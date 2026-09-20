@@ -91,16 +91,16 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             <View style={styles.iconWrap}>{icon}</View>
             <View style={styles.content}>
               {toast.title ? (
-                <Typography variant="caption" style={styles.title}>
+                <Typography variant="caption" color={Colors.white} style={styles.title}>
                   {toast.title}
                 </Typography>
               ) : null}
-              <Typography variant="caption" color={Colors.text} style={styles.message}>
+              <Typography variant="caption" color={Colors.white + 'E6'} style={styles.message}>
                 {toast.message}
               </Typography>
             </View>
             <TouchableOpacity onPress={hideToast} hitSlop={10}>
-              <X size={18} color={Colors.textSecondary} />
+              <X size={18} color={Colors.white + 'CC'} />
             </TouchableOpacity>
           </Animated.View>
         </View>
@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   title: {
-    color: Colors.text,
+    color: Colors.white,
     fontWeight: '800',
   },
   message: {

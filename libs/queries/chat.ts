@@ -159,7 +159,9 @@ export function useChatThread(input: {
   const messagesQuery = useQuery<ChatMessageRow[]>({
     queryKey: ['chat-messages', activeConversationId ?? 'none'],
     enabled: !!activeConversationId,
-    refetchInterval: 8000,
+    refetchInterval: 30000,
+    staleTime: 15000,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       assertSupabaseConfigured();
 

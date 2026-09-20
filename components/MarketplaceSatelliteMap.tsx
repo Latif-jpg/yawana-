@@ -7,6 +7,7 @@ export type MarketplaceSellerLocation = {
   longitude: number;
   trustScore: number;
   verified: boolean;
+  isOnline: boolean;
 };
 
 type Props = {

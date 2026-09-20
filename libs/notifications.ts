@@ -20,7 +20,8 @@ export async function registerForPushNotificationsAsync() {
   if (Platform.OS === 'web') return null;
 
   if (Platform.OS === 'android') {
-    console.warn('Push notifications temporarily disabled on Android until FCM is fully configured.');
+    // Android push requires Firebase/FCM in the dev client. Keep startup silent
+    // until that native configuration is present; this is not a runtime error.
     return null;
   }
 

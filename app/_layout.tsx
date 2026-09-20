@@ -9,6 +9,7 @@ import { ToastProvider } from '@/components/ToastProvider';
 import { Button } from '@/components/Button';
 import { Typography } from '@/components/Typography';
 import { Colors } from '@/constants/Theme';
+import { supabase } from '@/libs/supabase';
 
 const queryClient = new QueryClient();
 
@@ -50,6 +51,21 @@ class RootErrorBoundary extends Component<{ children: React.ReactNode }, { hasEr
 
 function NotificationManager() {
   const { user } = useAuth();
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const markPresence = () => {
+      void supabase
+        .from('profiles')
+        .update({ boutique_status: 'online', last_active_at: new Date().toISOString() })
+        .eq('id', user.id);
+    };
+
+    markPresence();
+    const interval = setInterval(markPresence, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [user?.id]);
 
   useEffect(() => {
     let cancelled = false;

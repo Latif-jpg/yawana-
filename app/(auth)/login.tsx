@@ -51,6 +51,14 @@ function normalizeAuthError(err: any) {
     return 'Trop de tentatives. Réessayez dans un instant.';
   }
 
+  if (
+    message.toLowerCase().includes('failed to fetch') ||
+    message.toLowerCase().includes('gateway timeout') ||
+    status >= 500
+  ) {
+    return 'Le serveur Yawana est temporairement indisponible. Vérifiez votre connexion puis réessayez dans quelques instants.';
+  }
+
   return message || 'Une erreur est survenue';
 }
 

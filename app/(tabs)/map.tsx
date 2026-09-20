@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Image, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
@@ -8,18 +8,33 @@ import { MarketplaceSatelliteMap } from '@/components/MarketplaceSatelliteMap';
 import { Typography } from '@/components/Typography';
 import { Colors, Layout, Radius, Shadows, Spacing } from '@/constants/Theme';
 import { useMarketplaceSellerLocations, useSearchableProducts } from '@/libs/queries';
+import { useZoneDetection } from '@/hooks/useZoneDetection';
 import type { SearchableProductRow } from '@/libs/queries/types';
 
-type MarketplaceFilter = 'all' | 'online' | 'verified';
+type MarketplaceFilter = 'all' | 'online' | 'verified' | 'nearby';
 
 type SellerGroup = {
   id: string;
   name: string;
   trustScore: number;
   verified: boolean;
+  isOnline: boolean;
   tier: string;
   products: SearchableProductRow[];
+  distanceKm: number | null;
 };
+
+function distanceInKm(from: { latitude: number; longitude: number }, to: { latitude: number; longitude: number }) {
+  const earthRadiusKm = 6371;
+  const latitudeDelta = ((to.latitude - from.latitude) * Math.PI) / 180;
+  const longitudeDelta = ((to.longitude - from.longitude) * Math.PI) / 180;
+  const latitude1 = (from.latitude * Math.PI) / 180;
+  const latitude2 = (to.latitude * Math.PI) / 180;
+  const value =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.sin(longitudeDelta / 2) ** 2 * Math.cos(latitude1) * Math.cos(latitude2);
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+}
 
 function getSellerLabel(item: SearchableProductRow) {
   return item.seller_full_name || 'Boutique locale';
@@ -40,6 +55,16 @@ export default function MarketplaceScreen() {
   const [search, setSearch] = useState('');
   const [selectedSellerId, setSelectedSellerId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  const { result: userLocation, detect, isDetecting } = useZoneDetection();
+
+  useEffect(() => {
+    void detect();
+  }, [detect]);
+
+  const sellerLocationById = useMemo(
+    () => new Map((sellerLocations ?? []).map((seller) => [seller.id, seller])),
+    [sellerLocations]
+  );
 
   const sellers = useMemo<SellerGroup[]>(() => {
     const groups = new Map<string, SellerGroup>();
@@ -48,6 +73,8 @@ export default function MarketplaceScreen() {
     (searchableProducts ?? [])
       .filter((item) => item.source === 'boutique' && item.owner_id)
       .filter((item) => filter !== 'verified' || isVerifiedSeller(item))
+      .filter((item) => filter !== 'online' || sellerLocationById.get(item.owner_id as string)?.isOnline === true)
+      .filter((item) => filter !== 'nearby' || Boolean(userLocation && sellerLocationById.has(item.owner_id as string)))
       .filter((item) => {
         if (!normalizedSearch) return true;
         return [item.name, item.category, getSellerLabel(item)]
@@ -67,16 +94,24 @@ export default function MarketplaceScreen() {
           name: getSellerLabel(item),
           trustScore: Number(item.seller_trust_score ?? 0),
           verified: isVerifiedSeller(item),
+          isOnline: sellerLocationById.get(sellerId)?.isOnline ?? false,
           tier: String(item.seller_market_access_tier || 'reliable'),
           products: [item],
+          distanceKm: (() => {
+            const location = sellerLocationById.get(sellerId);
+            return userLocation && location ? distanceInKm(userLocation, location) : null;
+          })(),
         });
       });
 
     return Array.from(groups.values()).sort((left, right) => {
       if (left.verified !== right.verified) return left.verified ? -1 : 1;
+      if (filter === 'nearby') {
+        return (left.distanceKm ?? Number.POSITIVE_INFINITY) - (right.distanceKm ?? Number.POSITIVE_INFINITY);
+      }
       return right.trustScore - left.trustScore;
     });
-  }, [filter, search, searchableProducts]);
+  }, [filter, search, searchableProducts, sellerLocationById, userLocation]);
 
   const visibleSellers = selectedSellerId
     ? sellers.filter((seller) => seller.id === selectedSellerId)
@@ -134,6 +169,7 @@ export default function MarketplaceScreen() {
           ['all', 'Toutes les boutiques'],
           ['online', 'En ligne'],
           ['verified', 'Vérifiées'],
+          ['nearby', 'À proximité'],
         ] as Array<[MarketplaceFilter, string]>).map(([value, label]) => (
           <TouchableOpacity
             key={value}
@@ -147,6 +183,17 @@ export default function MarketplaceScreen() {
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      <TouchableOpacity
+        style={styles.locationButton}
+        onPress={() => void detect()}
+        activeOpacity={0.82}
+        disabled={isDetecting}
+      >
+        <Typography variant="caption" color={Colors.primary} style={styles.locationButtonText}>
+          {isDetecting ? 'Localisation en cours...' : userLocation ? 'Position actualisée' : 'Activer ma position'}
+        </Typography>
+      </TouchableOpacity>
 
       <View style={styles.viewToggle}>
         <TouchableOpacity
@@ -166,7 +213,7 @@ export default function MarketplaceScreen() {
         >
           <View style={{ width: 12, height: 12, borderRadius: 4, backgroundColor: Colors.primary }} />
           <Typography variant="caption" color={viewMode === 'map' ? Colors.white : Colors.textSecondary} style={styles.viewToggleText}>
-            Carte satellite
+            Carte Rue / Satellite
           </Typography>
         </TouchableOpacity>
       </View>
@@ -182,13 +229,16 @@ export default function MarketplaceScreen() {
             </View>
             <View style={styles.satelliteBadge}>
               <View style={{ width: 12, height: 12, borderRadius: 4, backgroundColor: Colors.primary }} />
-              <Typography variant="caption" color={Colors.primary} style={{ fontWeight: '800' }}>SATELLITE</Typography>
+              <Typography variant="caption" color={Colors.primary} style={{ fontWeight: '800' }}>RUE · SATELLITE</Typography>
             </View>
           </View>
           <MarketplaceSatelliteMap
             sellers={sellerLocations ?? []}
             onSelectSeller={setSelectedSellerId}
           />
+          <Typography variant="caption" color={Colors.textSecondary} style={styles.mapAttribution}>
+            © OpenStreetMap contributors · Satellite : Tiles © Esri
+          </Typography>
         </Card>
       ) : null}
 
@@ -245,19 +295,36 @@ export default function MarketplaceScreen() {
                 <Typography variant="caption" color={Colors.textSecondary}>
                   {seller.verified ? 'Vendeur vérifié' : 'Vendeur éligible'} · Fiabilité {seller.trustScore}/100
                 </Typography>
+                <Typography variant="caption" color={Colors.primary} style={styles.distanceText}>
+                  {seller.distanceKm === null ? 'Distance indisponible' : `${seller.distanceKm.toFixed(1)} km de vous`}
+                </Typography>
               </View>
               <Typography variant="h2" color={Colors.textSecondary}>›</Typography>
             </TouchableOpacity>
 
             <View style={styles.availabilityRow}>
-              <View style={styles.onlineDot} />
-              <Typography variant="caption" color={Colors.textSecondary}>Disponible en ligne</Typography>
+              <View style={[styles.onlineDot, !seller.isOnline && styles.offlineDot]} />
+              <Typography variant="caption" color={seller.isOnline ? '#16A34A' : Colors.textSecondary}>
+                {seller.isOnline ? 'En ligne maintenant' : 'Hors ligne'}
+              </Typography>
               <Typography variant="caption" color={Colors.textSecondary}>·</Typography>
               <Typography variant="caption" color={Colors.textSecondary}>{seller.products.length} article{seller.products.length === 1 ? '' : 's'}</Typography>
             </View>
 
+            {selectedSellerId === seller.id ? (
+              <View style={styles.boutiqueInfoBox}>
+                <Typography variant="label" color={Colors.primary}>INFORMATIONS BOUTIQUE</Typography>
+                <Typography variant="caption" color={Colors.textSecondary} style={styles.boutiqueInfoText}>
+                  {seller.name} · {seller.verified ? 'Boutique vérifiée' : 'Boutique éligible'} · Fiabilité {seller.trustScore}/100
+                </Typography>
+                <Typography variant="caption" color={Colors.textSecondary}>
+                  {seller.distanceKm === null ? 'Position non disponible' : `${seller.distanceKm.toFixed(1)} km de votre position`} · {seller.isOnline ? 'Répond actuellement' : 'Répondra dès sa prochaine connexion'}
+                </Typography>
+              </View>
+            ) : null}
+
             <View style={styles.productsList}>
-              {seller.products.slice(0, 4).map((product) => (
+              {seller.products.slice(0, selectedSellerId === seller.id ? seller.products.length : 2).map((product) => (
                 <View key={product.id} style={styles.productRow}>
                   {product.image_url ? (
                     <Image source={{ uri: product.image_url }} style={styles.productImage} />
@@ -283,6 +350,17 @@ export default function MarketplaceScreen() {
                 </View>
               ))}
             </View>
+            {selectedSellerId !== seller.id && seller.products.length > 2 ? (
+              <TouchableOpacity
+                style={styles.viewBoutiqueButton}
+                onPress={() => setSelectedSellerId(seller.id)}
+                activeOpacity={0.82}
+              >
+                <Typography variant="caption" color={Colors.primary} style={styles.viewBoutiqueText}>
+                  Voir les {seller.products.length} produits de la boutique
+                </Typography>
+              </TouchableOpacity>
+            ) : null}
           </Card>
         ))
       ) : null}
@@ -311,6 +389,8 @@ const styles = StyleSheet.create({
   filterChip: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: Radius.pill, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.card },
   filterChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   filterText: { fontWeight: '700' },
+  locationButton: { alignSelf: 'flex-start', paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: Radius.pill, borderWidth: 1, borderColor: Colors.primary, backgroundColor: Colors.primary + '14', marginBottom: Spacing.md },
+  locationButtonText: { fontWeight: '800' },
   sectionHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: Spacing.sm, marginBottom: Spacing.md },
   resetText: { fontWeight: '700' },
   sellerCard: { marginBottom: Spacing.md, padding: Spacing.md, borderRadius: Radius.lg, backgroundColor: Colors.card },
@@ -321,13 +401,18 @@ const styles = StyleSheet.create({
   mapCard: { padding: Spacing.sm, borderRadius: Radius.lg, overflow: 'hidden' },
   mapHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.sm, paddingBottom: Spacing.md },
   satelliteBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 6, borderRadius: Radius.pill, backgroundColor: Colors.primaryMuted },
+  mapAttribution: { paddingHorizontal: Spacing.sm, paddingTop: 6, paddingBottom: 2 },
   sellerHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   sellerAvatar: { width: 44, height: 44, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primary + '14', borderWidth: 1, borderColor: Colors.border },
   sellerDetails: { flex: 1, minWidth: 0 },
   sellerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   sellerName: { fontSize: 18, flexShrink: 1 },
+  distanceText: { marginTop: 4, fontWeight: '700' },
   availabilityRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: Spacing.md, paddingVertical: Spacing.sm, borderTopWidth: 1, borderBottomWidth: 1, borderColor: Colors.border },
-  onlineDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.emerald },
+  onlineDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: '#22C55E' },
+  offlineDot: { backgroundColor: Colors.textSecondary },
+  boutiqueInfoBox: { marginTop: Spacing.md, padding: Spacing.md, borderRadius: Radius.md, backgroundColor: Colors.primary + '0D', borderWidth: 1, borderColor: Colors.primary + '25' },
+  boutiqueInfoText: { marginTop: 6, lineHeight: 19 },
   productsList: { marginTop: Spacing.sm },
   productRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.sm },
   productImage: { width: 56, height: 56, borderRadius: Radius.md, backgroundColor: Colors.background },
@@ -338,6 +423,8 @@ const styles = StyleSheet.create({
   productPrice: { fontSize: 14, color: Colors.text },
   orderButton: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: Radius.sm, backgroundColor: Colors.primary },
   orderButtonText: { fontWeight: '800', fontSize: 11 },
+  viewBoutiqueButton: { marginTop: Spacing.sm, paddingVertical: Spacing.md, alignItems: 'center', borderTopWidth: 1, borderColor: Colors.border },
+  viewBoutiqueText: { fontWeight: '800' },
   emptyCard: { alignItems: 'center', padding: Spacing.xl, borderRadius: Radius.lg },
   emptyTitle: { marginTop: Spacing.md, textAlign: 'center' },
   emptyText: { textAlign: 'center', marginTop: Spacing.sm, lineHeight: 20 },

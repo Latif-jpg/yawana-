@@ -6,6 +6,9 @@ export function useProfile(userId: string) {
   return useQuery({
     queryKey: ['profile', userId],
     enabled: !!userId,
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       assertSupabaseConfigured();
 
@@ -21,10 +24,12 @@ export function useProfile(userId: string) {
   });
 }
 
-export function useUserStats(userId: string) {
+export function useUserStats(userId: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['user-stats', userId],
-    enabled: !!userId,
+    enabled: !!userId && (options?.enabled ?? true),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       assertSupabaseConfigured();
 
@@ -43,6 +48,8 @@ export function useUserRewardSummary(userId: string) {
   return useQuery({
     queryKey: ['user-reward-summary', userId],
     enabled: !!userId,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       assertSupabaseConfigured();
 
@@ -82,12 +89,12 @@ export function useUserRewardSummary(userId: string) {
   });
 }
 
-export function useZoneLeaderboard(cityId?: string | null, role?: string | null) {
+export function useZoneLeaderboard(cityId?: string | null, role?: string | null, options?: { enabled?: boolean }) {
   const devBoostEnabled = String(process.env.EXPO_PUBLIC_ENABLE_DEMO_RANKING || '').toLowerCase() === 'true';
 
   return useQuery({
     queryKey: ['zone-leaderboard', cityId ?? 'all', role ?? 'all'],
-    enabled: !!cityId,
+    enabled: !!cityId && (options?.enabled ?? true),
     queryFn: async () => {
       assertSupabaseConfigured();
 
@@ -176,10 +183,10 @@ export function useZoneLeaderboard(cityId?: string | null, role?: string | null)
   });
 }
 
-export function useUserBadges(userId: string) {
+export function useUserBadges(userId: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['user-badges', userId],
-    enabled: !!userId,
+    enabled: !!userId && (options?.enabled ?? true),
     queryFn: async () => {
       assertSupabaseConfigured();
 
@@ -259,10 +266,17 @@ export function useUpdateProfile() {
         throw new Error('Session profil invalide. Connectez-vous avant de modifier votre profil.');
       }
 
+      const currentMetadata = session.user.user_metadata ?? {};
       const metadataUpdate: Record<string, string> = {};
-      if (typeof profile.full_name === 'string') metadataUpdate.full_name = profile.full_name;
-      if (typeof profile.phone === 'string') metadataUpdate.phone = profile.phone;
-      if (typeof profile.role === 'string') metadataUpdate.role = profile.role;
+      if (typeof profile.full_name === 'string' && profile.full_name !== currentMetadata.full_name) {
+        metadataUpdate.full_name = profile.full_name;
+      }
+      if (typeof profile.phone === 'string' && profile.phone !== currentMetadata.phone) {
+        metadataUpdate.phone = profile.phone;
+      }
+      if (typeof profile.role === 'string' && profile.role !== currentMetadata.role) {
+        metadataUpdate.role = profile.role;
+      }
 
       if (Object.keys(metadataUpdate).length > 0) {
         const { error: authUpdateError } = await supabase.auth.updateUser({

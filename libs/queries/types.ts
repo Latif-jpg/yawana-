@@ -97,6 +97,7 @@ export interface BoutiqueItemRow {
   image_url?: string | null;
   is_visible_in_search?: boolean | null;
   created_at: string;
+  updated_at?: string | null;
 }
 
 export interface SearchableProductRow {

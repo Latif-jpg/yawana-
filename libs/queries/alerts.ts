@@ -5,7 +5,9 @@ import type { PriceAlertRow, PriceAlertActionRow } from './types';
 export function usePriceAlerts() {
   return useQuery<PriceAlertRow[]>({
     queryKey: ['price-alerts'],
-    refetchInterval: 30000,
+    refetchInterval: 60000,
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       assertSupabaseConfigured();
 
@@ -56,7 +58,9 @@ export function useTargetedPriceAlerts(input: {
 }) {
   return useQuery<PriceAlertRow[]>({
     queryKey: ['price-alerts', 'targeted', input.cityId ?? 'all', input.marketId ?? 'all', input.role ?? 'client'],
-    refetchInterval: 30000,
+    refetchInterval: 60000,
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       assertSupabaseConfigured();
 
@@ -140,10 +144,10 @@ export function useTargetedPriceAlerts(input: {
   });
 }
 
-export function useUserAlertActions(userId: string) {
+export function useUserAlertActions(userId: string, options?: { enabled?: boolean }) {
   return useQuery<PriceAlertActionRow[]>({
     queryKey: ['user-alert-actions', userId],
-    enabled: !!userId,
+    enabled: !!userId && (options?.enabled ?? true),
     queryFn: async () => {
       assertSupabaseConfigured();
 

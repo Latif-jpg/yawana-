@@ -5,11 +5,16 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   Award,
   BellRing,
   CheckCircle2,
   Edit2,
+  Eye,
+  EyeOff,
   History,
   Info,
   MapPin,
@@ -20,6 +25,7 @@ import {
   type LucideIcon,
   X,
   Zap,
+  Trash2,
 } from 'lucide-react-native';
 
 import { Button } from '@/components/Button';
@@ -30,11 +36,13 @@ import { EditProfileModal, HistoryDetailModal, PriceCorrectionModal, SettingsMod
 import { Colors, Layout, Radius, Shadows, Spacing } from '@/constants/Theme';
 import { useAuth } from '@/libs/auth';
 import { supabase } from '@/libs/supabase';
+import { useBoutiqueProductDemand } from '@/libs/queries/boutique';
 import { formatPrice, formatTimeAgo } from '@/libs/format';
 import { formatProductCategory, normalizeProductName, normalizeUnit } from '@/libs/normalization';
 import {
   useActOnPriceAlert,
   useAddBoutiqueItem,
+  useDeleteBoutiqueItem,
   useAddProduct,
   useAddPrice,
   DEMO_SELLER_PROFILE_ID,
@@ -44,6 +52,7 @@ import {
   useProfile,
   useTargetedPriceAlerts,
   useUpdateProfile,
+  useUpdateBoutiqueItem,
   useUserAlertActions,
   useUserBadges,
   useUserBoutiqueItems,
@@ -349,26 +358,36 @@ export default function ProfileScreen() {
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const currentUserId = user?.id || GUEST_ID;
+  const [profileTab, setProfileTab] = useState<'profil' | 'boutique'>('boutique');
+
   const canWriteProfile = !!session && !!user?.id;
   const { data: profile, isLoading: isLoadingProfile } = useProfile(currentUserId);
-  const { data: stats } = useUserStats(currentUserId);
-  const { data: userBadges } = useUserBadges(currentUserId);
+  const { data: stats } = useUserStats(currentUserId, { enabled: profileTab === 'profil' });
+  const { data: userBadges } = useUserBadges(currentUserId, { enabled: profileTab === 'profil' });
   const { data: rewardSummary } = useUserRewardSummary(currentUserId);
-  const { data: zoneLeaderboard } = useZoneLeaderboard(profile?.city_id, profile?.role);
+  const { data: zoneLeaderboard } = useZoneLeaderboard(profile?.city_id, profile?.role, { enabled: profileTab === 'profil' });
   const { data: recentMarkets } = useUserRecentMarkets(currentUserId);
   const { data: cities } = useCities();
   const { data: geoMarkets } = useMarketsWithCoords();
-  const { data: alertActions } = useUserAlertActions(currentUserId);
-  const { data: priceHistory } = useUserPriceHistory(currentUserId);
+  const { data: alertActions } = useUserAlertActions(currentUserId, { enabled: profileTab === 'profil' });
+  const { data: priceHistory } = useUserPriceHistory(currentUserId, { enabled: profileTab === 'profil' });
   const { data: products } = useProducts();
   const updateProfile = useUpdateProfile();
   const addProductMutation = useAddProduct();
   const addBoutiqueItem = useAddBoutiqueItem();
+  const updateBoutiqueItem = useUpdateBoutiqueItem();
+  const deleteBoutiqueItem = useDeleteBoutiqueItem();
   const actOnAlert = useActOnPriceAlert();
   const addPrice = useAddPrice();
   const [targetMarketId, setTargetMarketId] = useState<string | null>(null);
-  const [profileTab, setProfileTab] = useState<'profil' | 'boutique'>('boutique');
+  const [profileSection, setProfileSection] = useState<'boutique' | 'contributions' | 'recompenses' | 'activite'>('boutique');
+  const [boutiqueFilter, setBoutiqueFilter] = useState<'all' | 'demand' | 'recent'>('all');
   const { data: boutiqueItems } = useUserBoutiqueItems(currentUserId);
+  const boutiqueProductIds = useMemo(
+    () => (boutiqueItems ?? []).map((item: any) => item.product_id).filter(Boolean),
+    [boutiqueItems]
+  );
+  const { data: boutiqueProductDemand } = useBoutiqueProductDemand(boutiqueProductIds);
   const { data: chatInbox } = useChatInbox(currentUserId);
   const recentChats = useMemo(() => (chatInbox ?? []).slice(0, 3), [chatInbox]);
 
@@ -545,6 +564,8 @@ export default function ProfileScreen() {
   const [boutiqueUnit, setBoutiqueUnit] = useState('pièce');
   const [boutiquePrice, setBoutiquePrice] = useState('');
   const [boutiqueImageUrl, setBoutiqueImageUrl] = useState('');
+  const [boutiqueImageMimeType, setBoutiqueImageMimeType] = useState<string | null>(null);
+  const [editingBoutiqueItemId, setEditingBoutiqueItemId] = useState<string | null>(null);
   const [correctionModal, setCorrectionModal] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState<any | null>(null);
   const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<any | null>(null);
@@ -806,6 +827,128 @@ export default function ProfileScreen() {
     );
   };
 
+  const handlePickBoutiqueImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      showToast({
+        tone: 'info',
+        title: 'Accès aux photos requis',
+        message: 'Autorise Yawana à accéder à tes photos pour ajouter une image produit.',
+      });
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]?.uri) {
+      const asset = result.assets[0];
+      const maxSide = Math.max(asset.width ?? 0, asset.height ?? 0);
+      const actions =
+        maxSide > 1280
+          ? [{ resize: { width: asset.width >= asset.height ? 1280 : Math.round((asset.width / asset.height) * 1280) } }]
+          : [];
+
+      // On compresse avant même de conserver l'URI : l'original lourd ne sera
+      // jamais envoyé à Supabase.
+      const compressed = await ImageManipulator.manipulateAsync(asset.uri, actions, {
+        compress: 0.72,
+        format: ImageManipulator.SaveFormat.JPEG,
+      });
+
+      setBoutiqueImageUrl(compressed.uri);
+      setBoutiqueImageMimeType('image/jpeg');
+    }
+  };
+
+  const resolveBoutiqueImageUrl = async (imageUri: string, mimeType?: string | null) => {
+    const normalizedUri = imageUri.trim();
+    if (!normalizedUri || /^https?:\/\//i.test(normalizedUri)) {
+      return normalizedUri || null;
+    }
+
+    // Android peut renvoyer une URI locale content:// ou file://.
+    // fetch() la traite comme une URL réseau et échoue avec Network request failed.
+    const base64 = await FileSystem.readAsStringAsync(normalizedUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const binary = globalThis.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    if (!bytes.length) {
+      throw new Error('La photo sélectionnée est vide ou illisible.');
+    }
+
+    const contentType = mimeType || 'image/jpeg';
+    const extension = contentType.includes('png') ? 'png' : 'jpg';
+    const path = `${currentUserId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
+    const { error: uploadError } = await supabase.storage
+      .from('product-images')
+      .upload(path, bytes, {
+        contentType,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw new Error(`Upload photo impossible : ${uploadError.message}`);
+    }
+
+    const { data } = supabase.storage.from('product-images').getPublicUrl(path);
+    return data.publicUrl;
+  };
+
+  const startEditBoutiqueItem = (item: any) => {
+    setEditingBoutiqueItemId(item.id);
+    setBoutiqueLabel(item.label || '');
+    setBoutiqueCategory(item.category || '');
+    setBoutiqueUnit(item.unit || 'pièce');
+    setBoutiquePrice(item.price_value != null ? String(item.price_value) : '');
+    setBoutiqueImageUrl(item.image_url || '');
+    setBoutiqueImageMimeType(null);
+  };
+
+  const toggleBoutiqueVisibility = async (item: any) => {
+    try {
+      await updateBoutiqueItem.mutateAsync({
+        id: item.id,
+        owner_id: currentUserId,
+        is_visible_in_search: !item.is_visible_in_search,
+      });
+      showToast({
+        tone: 'success',
+        title: item.is_visible_in_search ? 'Produit masqué' : 'Produit visible',
+        message: item.is_visible_in_search ? 'Le produit reste dans ta boutique mais sort des recherches.' : 'Le produit peut maintenant apparaître dans les boutiques éligibles.',
+      });
+    } catch (error: any) {
+      showToast({ tone: 'error', title: 'Visibilité impossible', message: error?.message || 'Impossible de modifier la visibilité.' });
+    }
+  };
+
+  const confirmDeleteBoutiqueItem = (item: any) => {
+    Alert.alert('Supprimer ce produit ?', `${item.label} sera retiré de ta boutique.`, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteBoutiqueItem.mutateAsync({ id: item.id, owner_id: currentUserId });
+            if (editingBoutiqueItemId === item.id) setEditingBoutiqueItemId(null);
+            showToast({ tone: 'success', title: 'Produit supprimé', message: 'Le produit a été retiré de ta boutique.' });
+          } catch (error: any) {
+            showToast({ tone: 'error', title: 'Suppression impossible', message: error?.message || 'Impossible de supprimer ce produit.' });
+          }
+        },
+      },
+    ]);
+  };
+
   const handleAddBoutiqueItem = async () => {
     if (!canWriteProfile) {
       return;
@@ -822,6 +965,7 @@ export default function ProfileScreen() {
 
     try {
       const label = boutiqueLabel.trim();
+      const imageUrl = await resolveBoutiqueImageUrl(boutiqueImageUrl, boutiqueImageMimeType);
       const category = formatProductCategory(boutiqueCategory);
       if (!category) {
         showToast({
@@ -834,6 +978,29 @@ export default function ProfileScreen() {
 
       const unit = boutiqueUnit.trim() || 'pièce';
       const parsedPrice = boutiquePrice.trim() ? Number(boutiquePrice) : null;
+
+      if (editingBoutiqueItemId) {
+        await updateBoutiqueItem.mutateAsync({
+          id: editingBoutiqueItemId,
+          owner_id: currentUserId,
+          label,
+          category,
+          unit,
+          price_value: parsedPrice !== null && Number.isFinite(parsedPrice) ? parsedPrice : null,
+          image_url: imageUrl,
+        });
+
+        setEditingBoutiqueItemId(null);
+        setBoutiqueLabel('');
+        setBoutiqueCategory('');
+        setBoutiqueUnit('pièce');
+        setBoutiquePrice('');
+        setBoutiqueImageUrl('');
+        setBoutiqueImageMimeType(null);
+        showToast({ tone: 'success', title: 'Produit modifié', message: 'Les informations de ta boutique ont été mises à jour.' });
+        return;
+      }
+
       const canExposeBoutiqueItem = sellerAccessEligible || verifiedSellerAccess || isDemoSellerProfile;
       const existingProduct = canExposeBoutiqueItem
         ? (products ?? []).find((product: any) => {
@@ -852,7 +1019,7 @@ export default function ProfileScreen() {
               name: label,
               category,
               unit,
-              image_url: boutiqueImageUrl.trim() || null,
+              image_url: imageUrl,
             })
           : null);
 
@@ -863,7 +1030,7 @@ export default function ProfileScreen() {
         category,
         unit,
         price_value: parsedPrice !== null && Number.isFinite(parsedPrice) ? parsedPrice : null,
-        image_url: boutiqueImageUrl.trim() || null,
+        image_url: imageUrl,
         is_visible_in_search: canExposeBoutiqueItem,
       });
 
@@ -872,6 +1039,7 @@ export default function ProfileScreen() {
       setBoutiqueUnit('pièce');
       setBoutiquePrice('');
       setBoutiqueImageUrl('');
+      setBoutiqueImageMimeType(null);
 
       showToast({
         tone: 'success',
@@ -1459,6 +1627,19 @@ export default function ProfileScreen() {
 
   const showAccountSignOut = Boolean(user?.id || (profile?.id && profile.id !== GUEST_ID));
 
+  const displayedBoutiqueItems = useMemo(() => {
+    const items = [...(boutiqueItems ?? [])];
+    if (boutiqueFilter === 'demand') {
+      return items.sort((a: any, b: any) => {
+        const demandDifference = (boutiqueProductDemand?.[b.product_id] ?? 0) - (boutiqueProductDemand?.[a.product_id] ?? 0);
+        return demandDifference || new Date(b.updated_at ?? b.created_at ?? 0).getTime() - new Date(a.updated_at ?? a.created_at ?? 0).getTime();
+      });
+    }
+    if (boutiqueFilter === 'recent') {
+      return items.sort((a: any, b: any) => new Date(b.updated_at ?? b.created_at ?? 0).getTime() - new Date(a.updated_at ?? a.created_at ?? 0).getTime());
+    }
+    return items;
+  }, [boutiqueFilter, boutiqueItems, boutiqueProductDemand]);
   if (isLoading || isLoadingProfile) {
     return null;
   }
@@ -1470,6 +1651,7 @@ export default function ProfileScreen() {
   const boutiqueTotalCount = boutiqueItems?.length ?? 0;
   const boutiqueVisibleCount = (boutiqueItems ?? []).filter((item: any) => Boolean(item.is_visible_in_search)).length;
   const boutiqueLinkedCount = (boutiqueItems ?? []).filter((item: any) => Boolean(item.product_id)).length;
+
   const boutiquePendingCount = Math.max(0, boutiqueTotalCount - boutiqueVisibleCount);
   const accountActionButton = (
     <TouchableOpacity
@@ -1485,40 +1667,85 @@ export default function ProfileScreen() {
     </TouchableOpacity>
   );
   const sectionTabs = (
-    <View style={styles.profileTabs}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.profileTabsScroll}
+      contentContainerStyle={styles.profileTabs}
+    >
       <TouchableOpacity
-        style={[styles.profileTabButton, profileTab === 'boutique' && styles.profileTabButtonActive]}
-        onPress={() => setProfileTab('boutique')}
+        style={[styles.profileTabButton, profileSection === 'boutique' && styles.profileTabButtonActive]}
+        onPress={() => { setProfileSection('boutique'); setProfileTab('boutique'); }}
       >
         <Typography
           variant="caption"
-          color={profileTab === 'boutique' ? Colors.white : Colors.textSecondary}
+          color={profileSection === 'boutique' ? Colors.white : Colors.textSecondary}
           style={styles.profileTabText}
         >
           Boutique
         </Typography>
       </TouchableOpacity>
       <TouchableOpacity
-        style={[styles.profileTabButton, profileTab === 'profil' && styles.profileTabButtonActive]}
-        onPress={() => setProfileTab('profil')}
+        style={[styles.profileTabButton, profileSection === 'contributions' && styles.profileTabButtonActive]}
+        onPress={() => { setProfileSection('contributions'); setProfileTab('profil'); }}
       >
         <Typography
           variant="caption"
-          color={profileTab === 'profil' ? Colors.white : Colors.textSecondary}
+          color={profileSection === 'contributions' ? Colors.white : Colors.textSecondary}
           style={styles.profileTabText}
         >
-          Compte
+          Contributions
         </Typography>
       </TouchableOpacity>
-    </View>
+      <TouchableOpacity
+        style={[styles.profileTabButton, profileSection === 'recompenses' && styles.profileTabButtonActive]}
+        onPress={() => { setProfileSection('recompenses'); setProfileTab('profil'); }}
+      >
+        <Typography variant="caption" color={profileSection === 'recompenses' ? Colors.white : Colors.textSecondary} style={styles.profileTabText}>
+          Récompenses
+        </Typography>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.profileTabButton, profileSection === 'activite' && styles.profileTabButtonActive]}
+        onPress={() => { setProfileSection('activite'); setProfileTab('profil'); }}
+      >
+        <Typography variant="caption" color={profileSection === 'activite' ? Colors.white : Colors.textSecondary} style={styles.profileTabText}>
+          Activité
+        </Typography>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.profileTabButton}
+        onPress={() => setSettingsModal(true)}
+      >
+        <Typography variant="caption" color={Colors.textSecondary} style={styles.profileTabText}>
+          Paramètres
+        </Typography>
+      </TouchableOpacity>
+    </ScrollView>
   );
 
+  const profileTopActions = (
+    <View style={styles.profileTopActions}>
+      <View style={styles.profileTopTitleWrap}>
+        <Typography variant="caption" color={Colors.textSecondary} style={styles.profileTopEyebrow}>Mon espace</Typography>
+        <Typography variant="h2" numberOfLines={1}>Profil & boutique</Typography>
+      </View>
+      <View style={styles.profileActionGroup}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Ouvrir les messages" style={styles.profileActionButton} onPress={() => router.push('/messages')} activeOpacity={0.82}>
+          <MessageCircle size={19} color={Colors.primary} />
+          {recentChats.length > 0 ? <View style={styles.profileActionBadge}><Typography variant="caption" color={Colors.white} style={styles.profileActionBadgeText}>{recentChats.length > 9 ? '9+' : recentChats.length}</Typography></View> : null}
+        </TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Ouvrir les notifications" style={styles.profileActionButton} onPress={() => { setProfileTab('profil'); setProfileSection('activite'); }} activeOpacity={0.82}>
+          <BellRing size={19} color={Colors.gold} />
+          {dedupedAlerts.length > 0 ? <View style={[styles.profileActionBadge, styles.profileNotificationBadge]}><Typography variant="caption" color={Colors.white} style={styles.profileActionBadgeText}>{dedupedAlerts.length > 9 ? '9+' : dedupedAlerts.length}</Typography></View> : null}
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
   if (profileTab === 'boutique') {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        {sectionTabs}
-        {accountActionButton}
-
+        {profileTopActions}
         <Card style={styles.sellerIdentityCard} variant="outline">
           <View style={styles.sellerIdentityTopRow}>
             <View style={styles.sellerIdentityAvatar}>
@@ -1557,9 +1784,11 @@ export default function ProfileScreen() {
           </View>
         </Card>
 
+        {sectionTabs}
+
         <Animated.View entering={FadeInDown.duration(500)} style={[styles.boutiqueHero, boutiqueSearchVisible && styles.boutiqueHeroActive]}>
           <View style={styles.boutiqueHeroTop}>
-            <View>
+            <View style={{ flex: 1, minWidth: 0 }}>
               <Typography variant="caption" color={boutiqueSearchVisible ? Colors.emerald : Colors.gold} style={styles.boutiqueEyebrow}>
                 {boutiqueSearchVisible ? 'Vitrine active' : 'Vitrine privée'}
               </Typography>
@@ -1658,18 +1887,41 @@ export default function ProfileScreen() {
                 style={[styles.boutiqueInput, styles.boutiqueHalfInput]}
               />
             </View>
-            <TextInput
-              value={boutiqueImageUrl}
-              onChangeText={setBoutiqueImageUrl}
-              placeholder="Lien de la photo (optionnel)"
-              placeholderTextColor={Colors.textSecondary}
-              autoCapitalize="none"
-              style={styles.boutiqueInput}
-            />
+            <TouchableOpacity
+              style={styles.photoPickerButton}
+              onPress={handlePickBoutiqueImage}
+              activeOpacity={0.82}
+            >
+              {boutiqueImageUrl ? (
+                <Image source={{ uri: boutiqueImageUrl }} style={styles.photoPickerPreview} resizeMode="cover" />
+              ) : (
+                <View style={styles.photoPickerPlaceholder}>
+                  <ShoppingBag color={Colors.primary} size={22} />
+                </View>
+              )}
+              <View style={styles.photoPickerCopy}>
+                <Typography variant="body" style={{ fontWeight: '800' }}>
+                  {boutiqueImageUrl ? 'Modifier la photo' : 'Ajouter une photo'}
+                </Typography>
+                <Typography variant="caption" color={Colors.textSecondary}>
+                  Une image claire améliore la visibilité du produit.
+                </Typography>
+              </View>
+            </TouchableOpacity>
+            {editingBoutiqueItemId ? (
+              <TouchableOpacity onPress={() => setEditingBoutiqueItemId(null)} style={styles.cancelEditButton} activeOpacity={0.82}>
+                <Typography variant="caption" color={Colors.textSecondary} style={{ fontWeight: '800' }}>Annuler la modification</Typography>
+              </TouchableOpacity>
+            ) : null}
+            {editingBoutiqueItemId ? (
+              <Typography variant="caption" color={Colors.primary} style={{ fontWeight: '800', marginBottom: 4 }}>
+                Modification du produit sélectionné
+              </Typography>
+            ) : null}
             <Button
               title={addBoutiqueItem.isPending ? 'Ajout...' : 'Ajouter à ma boutique'}
               onPress={handleAddBoutiqueItem}
-              loading={addBoutiqueItem.isPending}
+              loading={addBoutiqueItem.isPending || updateBoutiqueItem.isPending}
               style={{ marginTop: 4 }}
             />
           </View>
@@ -1690,9 +1942,35 @@ export default function ProfileScreen() {
             </View>
           </View>
 
+          <Typography variant="caption" color={Colors.textSecondary} style={styles.boutiqueFilterLabel}>
+            Trier les produits
+          </Typography>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.boutiqueFilterRow}>
+            {([
+              ['all', 'Tous'],
+              ['demand', 'Plus consultés'],
+              ['recent', 'Mis à jour'],
+            ] as const).map(([value, label]) => (
+              <TouchableOpacity
+                key={value}
+                onPress={() => setBoutiqueFilter(value)}
+                style={[styles.boutiqueFilterChip, boutiqueFilter === value && styles.boutiqueFilterChipActive]}
+                activeOpacity={0.82}
+              >
+                <Typography
+                  variant="caption"
+                  color={boutiqueFilter === value ? Colors.white : Colors.textSecondary}
+                  style={styles.boutiqueFilterChipText}
+                >
+                  {label}
+                </Typography>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
           {boutiqueItems?.length ? (
             <View style={styles.boutiqueList}>
-              {boutiqueItems.map((item) => {
+              {displayedBoutiqueItems.map((item) => {
                 const itemVisible = Boolean(item.is_visible_in_search && boutiqueSearchVisible);
                 const itemLinked = Boolean(item.product_id);
 
@@ -1734,6 +2012,23 @@ export default function ProfileScreen() {
                             {itemLinked ? 'Catalogue lié' : 'Non publié'}
                           </Typography>
                         </View>
+                      </View>
+
+                      <View style={styles.boutiqueItemActions}>
+                        <TouchableOpacity style={styles.productActionButton} onPress={() => startEditBoutiqueItem(item)} activeOpacity={0.82}>
+                          <Edit2 size={14} color={Colors.primary} />
+                          <Typography variant="caption" color={Colors.primary} style={styles.productActionText}>Modifier</Typography>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.productActionButton} onPress={() => void toggleBoutiqueVisibility(item)} activeOpacity={0.82}>
+                          {item.is_visible_in_search ? <EyeOff size={14} color={Colors.textSecondary} /> : <Eye size={14} color={Colors.emerald} />}
+                          <Typography variant="caption" color={Colors.textSecondary} style={styles.productActionText}>
+                            {item.is_visible_in_search ? 'Masquer' : 'Publier'}
+                          </Typography>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.productActionButton} onPress={() => confirmDeleteBoutiqueItem(item)} activeOpacity={0.82}>
+                          <Trash2 size={14} color={Colors.error} />
+                          <Typography variant="caption" color={Colors.error} style={styles.productActionText}>Supprimer</Typography>
+                        </TouchableOpacity>
                       </View>
                     </View>
                   </View>
@@ -1838,6 +2133,7 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {profileTopActions}
       {alertFeedback ? (
         <Card
           style={[
@@ -1881,9 +2177,6 @@ export default function ProfileScreen() {
         </Card>
       ) : null}
 
-      {sectionTabs}
-      {accountActionButton}
-
       <Animated.View entering={FadeInDown.duration(600)} style={styles.header}>
         <View style={styles.avatarContainer}>
           <View style={styles.avatar}>
@@ -1896,7 +2189,7 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        <Typography variant="h1" style={styles.name}>
+        <Typography variant="h1" style={styles.name} numberOfLines={1}>
           {visibleProfileName}
         </Typography>
 
@@ -1932,6 +2225,8 @@ export default function ProfileScreen() {
         <Typography variant="body" color={Colors.textSecondary} style={styles.bio}>
           {profile?.bio || 'Aucune bio definie.'}
         </Typography>
+
+        {sectionTabs}
 
         <Card style={styles.profileIntegrityCard} variant="outline">
           <View style={styles.profileIntegrityHeader}>
@@ -2689,6 +2984,7 @@ const styles = StyleSheet.create({
   content: {
     padding: Spacing.lg,
     paddingBottom: Layout.tabScreenBottomPadding,
+    width: '100%',
   },
   alertFeedbackCard: {
     marginBottom: 12,
@@ -2706,6 +3002,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary + '10',
   },
   header: {
+    width: '100%',
     alignItems: 'center',
     marginTop: 20,
     marginBottom: 30,
@@ -2739,16 +3036,36 @@ const styles = StyleSheet.create({
   name: {
     marginBottom: 8,
   },
+  profileTopActions: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    marginBottom: 16,
+  },
+  profileTopTitleWrap: { flex: 1, minWidth: 0 },
+  profileTopEyebrow: { textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: '800', marginBottom: 2 },
+  profileActionGroup: { flexDirection: 'row', gap: 8, marginLeft: 12 },
+  profileActionButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border, position: 'relative' },
+  profileActionBadge: { position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18, paddingHorizontal: 4, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primary, borderWidth: 2, borderColor: Colors.background },
+  profileNotificationBadge: { backgroundColor: Colors.gold },
+  profileActionBadgeText: { fontSize: 10, lineHeight: 12, fontWeight: '900' },
   profileTabs: {
     flexDirection: 'row',
     gap: 6,
-    marginBottom: 10,
+    marginBottom: 14,
     padding: 4,
     borderRadius: Radius.lg,
     backgroundColor: Colors.card,
+    flexGrow: 1,
+  },
+  profileTabsScroll: {
+    width: '100%',
+    alignSelf: 'stretch',
   },
   profileTabButton: {
-    flex: 1,
+    minWidth: 104,
     paddingVertical: 8,
     borderRadius: Radius.md,
     alignItems: 'center',
@@ -2787,6 +3104,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: Radius.pill,
     backgroundColor: Colors.emerald + '14',
+    flexShrink: 1,
   },
   sellerIdentityStats: {
     flexDirection: 'row',
@@ -2840,6 +3158,7 @@ const styles = StyleSheet.create({
   },
   boutiqueStatCard: {
     flex: 1,
+    minWidth: 0,
     padding: 12,
     borderRadius: Radius.lg,
     backgroundColor: Colors.background,
@@ -2883,9 +3202,63 @@ const styles = StyleSheet.create({
   boutiqueHalfInput: {
     flex: 1,
   },
+  photoPickerButton: {
+    minHeight: 82,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 10,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  photoPickerPreview: {
+    width: 62,
+    height: 62,
+    borderRadius: Radius.sm,
+  },
+  photoPickerPlaceholder: {
+    width: 62,
+    height: 62,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primaryMuted,
+    borderWidth: 1,
+    borderColor: Colors.primary + '45',
+  },
+  photoPickerCopy: {
+    flex: 1,
+    gap: 4,
+  },
   boutiqueList: {
     gap: 10,
     marginTop: 12,
+  },
+  boutiqueFilterRow: {
+    gap: 8,
+    paddingBottom: 2,
+  },
+  boutiqueFilterLabel: {
+    marginTop: 12,
+    marginBottom: 8,
+    fontWeight: '800',
+  },
+  boutiqueFilterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  boutiqueFilterChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  boutiqueFilterChipText: {
+    fontWeight: '800',
   },
   boutiqueItemCard: {
     flexDirection: 'row',
@@ -2930,6 +3303,23 @@ const styles = StyleSheet.create({
     gap: 8,
     flexWrap: 'wrap',
   },
+  boutiqueItemActions: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+    paddingTop: 2,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  productActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 5,
+    paddingRight: 6,
+  },
+  productActionText: { fontWeight: '800', fontSize: 12 },
+  cancelEditButton: { alignSelf: 'flex-start', paddingVertical: 6 },
   boutiqueActivityTabs: {
     flexDirection: 'row',
     gap: 8,
@@ -3052,6 +3442,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
   },
   profileIntegrityCard: {
+    width: '100%',
+    alignSelf: 'stretch',
     marginTop: 6,
     marginBottom: 12,
     padding: 10,
@@ -3237,6 +3629,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: Radius.pill,
+    flexShrink: 1,
   },
   ruleBadgeOk: {
     backgroundColor: Colors.emerald + '18',

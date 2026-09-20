@@ -71,9 +71,11 @@ export const PriceTicker = ({
   onPressItem?: (item: TickerItemProps) => void;
 }) => {
   const [isPaused, setIsPaused] = useState(false);
-  const visibleItems = useMemo(() => items.slice(0, Platform.OS === 'android' ? 2 : 3), [items]);
+  // Défilement de l'ensemble des produits avec variations (jusqu'à 15 produits)
+  const visibleItems = useMemo(() => items.slice(0, 15), [items]);
   const displayItems = useMemo(() => [...visibleItems, ...visibleItems], [visibleItems]);
-  const loopWidth = visibleItems.length * ITEM_WIDTH;
+  const itemTotalWidth = ITEM_WIDTH + 8;
+  const loopWidth = visibleItems.length * itemTotalWidth;
   const translateX = useSharedValue(0);
 
   useEffect(() => {
@@ -83,9 +85,11 @@ export const PriceTicker = ({
 
     cancelAnimation(translateX);
     translateX.value = 0;
+    // Vitesse fluide et continue adaptée au nombre de produits
+    const duration = Math.max(8000, (loopWidth / 40) * 1000);
     translateX.value = withRepeat(
       withTiming(-loopWidth, {
-        duration: Math.max(1, (loopWidth / 18) * 1000),
+        duration,
         easing: Easing.linear,
       }),
       -1,
@@ -107,7 +111,7 @@ export const PriceTicker = ({
     <View style={styles.container}>
       <View style={styles.label}>
         <Typography variant="caption" color={Colors.white} style={styles.labelText}>
-          DIRECT
+          PRIX DIRECT
         </Typography>
       </View>
       <View style={styles.viewport}>
@@ -118,8 +122,8 @@ export const PriceTicker = ({
         </Animated.View>
       </View>
       <TouchableOpacity style={styles.pauseButton} onPress={() => setIsPaused((value) => !value)}>
-        <Typography variant="caption" color={Colors.primary} style={styles.pauseText}>
-          {isPaused ? 'LIVE' : 'STOP'}
+        <Typography variant="caption" color={Colors.primaryLight} style={styles.pauseText}>
+          {isPaused ? '▶ LIVE' : '⏸'}
         </Typography>
       </TouchableOpacity>
     </View>
@@ -128,9 +132,10 @@ export const PriceTicker = ({
 
 const styles = StyleSheet.create({
   container: {
-    minHeight: Platform.OS === 'android' ? 72 : 56,
-    marginTop: Platform.OS === 'android' ? 64 : Spacing.sm,
+    minHeight: Platform.OS === 'android' ? 62 : 54,
+    marginTop: Platform.OS === 'android' ? 48 : Spacing.sm,
     marginHorizontal: Spacing.md,
+    marginBottom: 6,
     borderRadius: Radius.lg,
     backgroundColor: Colors.card,
     flexDirection: 'row',
@@ -138,20 +143,22 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: Colors.border,
+    ...Shadows.soft,
   },
   label: {
     backgroundColor: Colors.accent,
-    paddingHorizontal: 10,
-    minWidth: 62,
+    paddingHorizontal: 12,
+    minWidth: 70,
     alignSelf: 'stretch',
     justifyContent: 'center',
+    alignItems: 'center',
     zIndex: 10,
-    ...Shadows.soft,
   },
   labelText: {
-    fontWeight: '800',
+    fontWeight: '900',
     fontSize: 10,
     lineHeight: 12,
+    letterSpacing: 0.5,
   },
   tickerWrapper: {
     flexDirection: 'row',
@@ -167,9 +174,9 @@ const styles = StyleSheet.create({
   },
   item: {
     width: ITEM_WIDTH,
-    paddingHorizontal: 10,
-    paddingVertical: Platform.OS === 'android' ? 8 : 8,
-    borderRadius: Radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'android' ? 6 : 7,
+    borderRadius: 14,
     backgroundColor: Colors.background,
     borderWidth: 1,
     borderColor: Colors.border,

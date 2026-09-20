@@ -1,26 +1,41 @@
 export const Colors = {
-  // Dark Agro-Fintech: onyx + slate + one métier accent.
-  background: '#0B0E14',
-  card: '#161B26',
-  cardSecondary: '#1F2636',
-  glass: 'rgba(22, 27, 38, 0.75)',
-  glassDark: 'rgba(11, 14, 20, 0.82)',
-  border: 'rgba(255, 255, 255, 0.08)',
-  primary: '#00DC82',
-  primaryMuted: 'rgba(0, 220, 130, 0.15)',
-  secondary: '#6366F1',
-  accent: '#FF6B00',
+  // Palette Inspirée de Tinguiste (Modern Clean Light)
+  background: '#F4F4F3',
+  card: '#FFFFFF',
+  cardSecondary: '#EBECE8',
+  glass: 'rgba(255, 255, 255, 0.92)',
+  glassDark: 'rgba(10, 87, 164, 0.95)',
+  border: '#E2E8F0',
+  
+  // Couleurs de marque
+  primary: '#0A57A4',          // Bleu Roi Profond (Header & Hero)
+  primaryLight: '#0091F5',     // Bleu Électrique (CTA & Active tabs)
+  primaryMuted: 'rgba(10, 87, 164, 0.10)',
+  secondary: '#0091F5',
+  accent: '#F28B0C',           // Orange Ambré
   emerald: '#10B981',
   gold: '#F59E0B',
   error: '#EF4444',
+  
+  // Statuts de fiabilité des prix
   fiable: '#10B981',
-  confirme: '#3B82F6',
-  aVerifier: '#F59E0B',
+  confirme: '#0091F5',
+  aVerifier: '#F28B0C',
   danger: '#EF4444',
-  text: '#F9FAFB',
-  textPrimary: '#F9FAFB',
-  textSecondary: '#9CA3AF',
-  textMuted: '#6B7280',
+  
+  // Pastels pour les catégories
+  pastelBlue: '#E2EEF9',
+  pastelOrange: '#FDECE3',
+  pastelPurple: '#F3E8F9',
+  pastelGreen: '#E1F5EC',
+  pastelYellow: '#FEF3C7',
+  
+  // Typographie
+  text: '#0F172A',
+  textPrimary: '#0F172A',
+  textSecondary: '#64748B',
+  textMuted: '#94A3B8',
+  textOnPrimary: '#FFFFFF',
   white: '#FFFFFF',
 };
 

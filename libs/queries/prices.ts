@@ -7,8 +7,9 @@ import { normalizeProductName, normalizeUnit } from '@/libs/normalization';
 export function usePrices() {
   return useQuery<PriceRow[]>({
     queryKey: ['prices'],
-    refetchInterval: 30000,
-    staleTime: 10000,
+    refetchInterval: 60000,
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       try {
         assertSupabaseConfigured();
@@ -130,10 +131,10 @@ export function useUserRecentMarkets(userId: string) {
   });
 }
 
-export function useUserPriceHistory(userId: string) {
+export function useUserPriceHistory(userId: string, options?: { enabled?: boolean }) {
   return useQuery<UserPriceHistoryRow[]>({
     queryKey: ['user-price-history', userId],
-    enabled: !!userId,
+    enabled: !!userId && (options?.enabled ?? true),
     queryFn: async () => {
       assertSupabaseConfigured();
 

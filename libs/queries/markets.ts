@@ -5,6 +5,9 @@ import { MOCK_CITIES, MOCK_MARKETS } from '@/constants/MockData';
 export function useMarkets() {
   return useQuery({
     queryKey: ['markets'],
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       assertSupabaseConfigured();
 
@@ -22,6 +25,9 @@ export function useMarkets() {
 export function useCities() {
   return useQuery({
     queryKey: ['cities'],
+    staleTime: 30 * 60_000,
+    gcTime: 60 * 60_000,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       try {
         assertSupabaseConfigured();
@@ -80,6 +86,9 @@ export function useAddMarket() {
 export function useMarketsWithCoords() {
   return useQuery({
     queryKey: ['markets-geo'],
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       try {
         assertSupabaseConfigured();
